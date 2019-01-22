@@ -1,0 +1,41 @@
+package standbyme.api
+
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.core.io.ByteArrayResource
+import org.springframework.web.bind.annotation.*
+import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.bodyToMono
+import reactor.core.publisher.Mono
+
+@RestController
+@RequestMapping("objects")
+class APIController @Autowired constructor(private val webClientBuilder: WebClient.Builder) {
+
+    val webClient = webClientBuilder.baseUrl("http://localhost:8081/objects").build()
+
+    @GetMapping("{filename:.+}",produces = arrayOf("application/octet-stream"))
+    fun get(@PathVariable filename: String): Mono<ByteArrayResource> {
+        println(filename)
+
+
+//        val a = webClient.get().uri("""/$filename""").retrieve().bodyToMono<ByteArrayInputStream>().subscribe { it.forEach { println(it) } }
+        return webClient.get().uri("""/$filename""")
+                .retrieve()
+                .bodyToMono()
+//        val file = storageService.loadAsResource(filename)
+//        return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION,
+//                "attachment; filename=\"" + file.filename + "\"").body<Resource>(file)
+    }
+
+//    @PutMapping("{filename:.+}")
+//    fun put(@RequestBody data: String, @PathVariable filename: String): ResponseEntity<*> {
+//
+//        storageService.store(filename, data)
+//        return ResponseEntity.ok().build<Any>()
+//    }
+
+//    @ExceptionHandler(StorageFileNotFoundException::class)
+//    fun handleStorageFileNotFound(exc: StorageFileNotFoundException): ResponseEntity<*> {
+//        return ResponseEntity.notFound().build<Any>()
+//    }
+}
