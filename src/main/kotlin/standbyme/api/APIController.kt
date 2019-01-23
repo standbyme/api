@@ -13,10 +13,9 @@ import reactor.core.publisher.Mono
 @RequestMapping("objects")
 class APIController @Autowired constructor(private val webClientBuilder: WebClient.Builder, private val discoveryClient: DiscoveryClient) {
 
-    val webClient = webClientBuilder.build()
-
     @GetMapping("{filename:.+}", produces = arrayOf("application/octet-stream"))
     fun get(@PathVariable filename: String): Mono<ByteArray> {
+        val webClient = webClientBuilder.build()
         val instances = discoveryClient.getInstances("STORAGE")
         val urls = instances.map { """${it.uri}/objects/$filename""" }
         return Flux.fromIterable(urls).flatMap {

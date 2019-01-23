@@ -1,31 +1,79 @@
 package standbyme.api
 
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.BDDMockito.then
+
+import org.mockito.Mockito
+import org.mockito.Mockito.*
 import org.springframework.test.context.junit4.SpringRunner
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest
 import org.springframework.cloud.client.discovery.DiscoveryClient
+import org.springframework.cloud.client.discovery.simple.SimpleDiscoveryProperties.SimpleServiceInstance
 import org.springframework.test.web.reactive.server.WebTestClient
 import org.springframework.web.reactive.function.client.WebClient
+
+import org.mockserver.integration.ClientAndServer
+import org.mockserver.integration.ClientAndServer.startClientAndServer
+import org.mockserver.client.MockServerClient
+import org.mockserver.model.HttpRequest.request
+import org.mockserver.model.HttpResponse.response
+import java.net.URI
+
+
+typealias Consumer<T> = (T) -> Unit
 
 @RunWith(SpringRunner::class)
 @WebFluxTest(APIController::class)
 class APITests {
     @Autowired
-    private val webClient: WebTestClient? = null
+    lateinit var webClient: WebTestClient
 
     @MockBean
-    private val webClientBuilder: WebClient.Builder? = null
+    lateinit var mockWebClientBuilder: WebClient.Builder
+
     @MockBean
-    private val discoveryClient: DiscoveryClient? = null
+    lateinit var mockDiscoveryClient: DiscoveryClient
+
+    lateinit var mockServer: ClientAndServer
+
+    @Before
+    fun setUp() {
+        this.mockServer = startClientAndServer(1234)
+        MockServerClient("localhost", 1234)
+                .`when`(
+                        request()
+                )
+                .respond(
+                        response()
+                                .withBody("Hello Spring!")
+                )
+    }
+
+    @After
+    fun shutdown() {
+        this.mockServer.stop()
+    }
 
     @Test
-    fun getSuccessfully() {
-        this.webClient!!.get().uri("/objects/filename").exchange()
-        then(this.discoveryClient).should()!!.getInstances("STORAGE")
+    fun notFound() {
+        Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
+                .thenReturn(listOf(SimpleServiceInstance(URI("http://localhost:1234"))))
+        Mockito.`when`(this.mockWebClientBuilder.build())
+                .thenReturn(WebClient.builder().build())
+
+        this.webClient
+                .get()
+                .uri("/objects/filename")
+                .exchange()
+                .expectStatus()
+                .is2xxSuccessful
+
+
+        verify(this.mockDiscoveryClient).getInstances("STORAGE")
     }
 
 }
