@@ -43,6 +43,9 @@ class APITests {
 
     @Before
     fun setUp() {
+        Mockito.`when`(this.mockWebClientBuilder.build())
+                .thenReturn(WebClient.builder().build())
+
         this.mockServer1 = startClientAndServer(1234)
         this.mockServer2 = startClientAndServer(1235)
 
@@ -59,14 +62,29 @@ class APITests {
     @After
     fun shutdown() {
         this.mockServer1.stop()
+        this.mockServer2.stop()
     }
 
     @Test
     fun notFound() {
         Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
-                .thenReturn(listOf(SimpleServiceInstance(URI("http://localhost:1234")), SimpleServiceInstance(URI("http://localhost:1235"))))
-        Mockito.`when`(this.mockWebClientBuilder.build())
-                .thenReturn(WebClient.builder().build())
+                .thenReturn(listOf(1235).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
+
+
+        this.webClient
+                .get()
+                .uri("/objects/filename")
+                .exchange()
+                .expectStatus()
+                .isNotFound
+
+        verify(this.mockDiscoveryClient).getInstances("STORAGE")
+    }
+
+    @Test
+    fun successGet() {
+        Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
+                .thenReturn(listOf(1234, 1235).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
 
         this.webClient
                 .get()

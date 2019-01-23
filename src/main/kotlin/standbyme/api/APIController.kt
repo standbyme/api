@@ -23,7 +23,12 @@ class APIController @Autowired constructor(private val webClientBuilder: WebClie
                     .retrieve()
                     .bodyToMono<ByteArray>()
                     .onErrorResume { Mono.empty() }
-        }.single().onErrorResume { Mono.error(NotFoundException(filename)) }
+        }.single().onErrorResume {
+            when (it) {
+                is NoSuchElementException -> Mono.error(NotFoundException(filename))
+                else -> Mono.error(it)
+            }
+        }
     }
 }
 
