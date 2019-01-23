@@ -82,6 +82,22 @@ class APITests {
     }
 
     @Test
+    fun getTooManyResult() {
+        Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
+                .thenReturn(listOf(1234, 1234).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
+
+
+        this.webClient
+                .get()
+                .uri("/objects/filename")
+                .exchange()
+                .expectStatus()
+                .is5xxServerError
+
+        verify(this.mockDiscoveryClient).getInstances("STORAGE")
+    }
+
+    @Test
     fun successGet() {
         Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
                 .thenReturn(listOf(1234, 1235).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
