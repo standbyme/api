@@ -38,30 +38,33 @@ class APITests {
     @MockBean
     lateinit var mockDiscoveryClient: DiscoveryClient
 
-    lateinit var mockServer: ClientAndServer
+    lateinit var mockServer1: ClientAndServer
+    lateinit var mockServer2: ClientAndServer
 
     @Before
     fun setUp() {
-        this.mockServer = startClientAndServer(1234)
+        this.mockServer1 = startClientAndServer(1234)
+        this.mockServer2 = startClientAndServer(1235)
+
         MockServerClient("localhost", 1234)
                 .`when`(
                         request()
                 )
                 .respond(
                         response()
-                                .withBody("Hello Spring!")
+                                .withBody("Always Kid")
                 )
     }
 
     @After
     fun shutdown() {
-        this.mockServer.stop()
+        this.mockServer1.stop()
     }
 
     @Test
     fun notFound() {
         Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
-                .thenReturn(listOf(SimpleServiceInstance(URI("http://localhost:1234"))))
+                .thenReturn(listOf(SimpleServiceInstance(URI("http://localhost:1234")), SimpleServiceInstance(URI("http://localhost:1235"))))
         Mockito.`when`(this.mockWebClientBuilder.build())
                 .thenReturn(WebClient.builder().build())
 
@@ -71,6 +74,8 @@ class APITests {
                 .exchange()
                 .expectStatus()
                 .is2xxSuccessful
+                .expectHeader()
+                .contentLength(10)
 
 
         verify(this.mockDiscoveryClient).getInstances("STORAGE")
