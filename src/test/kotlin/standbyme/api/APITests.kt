@@ -18,13 +18,9 @@ import org.springframework.web.reactive.function.client.WebClient
 
 import org.mockserver.integration.ClientAndServer
 import org.mockserver.integration.ClientAndServer.startClientAndServer
-import org.mockserver.client.MockServerClient
 import org.mockserver.model.HttpRequest.request
 import org.mockserver.model.HttpResponse.response
 import java.net.URI
-
-
-typealias Consumer<T> = (T) -> Unit
 
 @RunWith(SpringRunner::class)
 @WebFluxTest(APIController::class)
@@ -38,18 +34,22 @@ class APITests {
     @MockBean
     lateinit var mockDiscoveryClient: DiscoveryClient
 
-    lateinit var mockServer1: ClientAndServer
-    lateinit var mockServer2: ClientAndServer
+    lateinit var contentServer: ClientAndServer
+    lateinit var notFoundServer: ClientAndServer
+    var contentServerPort: Int = 0
+    var notFoundServerPort: Int = 0
 
     @Before
     fun setUp() {
         Mockito.`when`(this.mockWebClientBuilder.build())
                 .thenReturn(WebClient.builder().build())
 
-        this.mockServer1 = startClientAndServer(1234)
-        this.mockServer2 = startClientAndServer(1235)
+        this.contentServer = startClientAndServer()
+        this.notFoundServer = startClientAndServer()
+        this.contentServerPort = this.contentServer.localPort
+        this.notFoundServerPort = this.notFoundServer.localPort
 
-        MockServerClient("localhost", 1234)
+        this.contentServer
                 .`when`(
                         request()
                 )
@@ -61,14 +61,14 @@ class APITests {
 
     @After
     fun shutdown() {
-        this.mockServer1.stop()
-        this.mockServer2.stop()
+        this.contentServer.stop()
+        this.notFoundServer.stop()
     }
 
     @Test
     fun notFound() {
         Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
-                .thenReturn(listOf(1235).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
+                .thenReturn(listOf(notFoundServerPort).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
 
 
         this.webClient
@@ -84,7 +84,7 @@ class APITests {
     @Test
     fun getTooManyResult() {
         Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
-                .thenReturn(listOf(1234, 1234).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
+                .thenReturn(listOf(contentServerPort, contentServerPort).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
 
 
         this.webClient
@@ -100,7 +100,7 @@ class APITests {
     @Test
     fun successGet() {
         Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
-                .thenReturn(listOf(1234, 1235).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
+                .thenReturn(listOf(contentServerPort, notFoundServerPort).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
 
         this.webClient
                 .get()
