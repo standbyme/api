@@ -20,6 +20,8 @@ import org.mockserver.integration.ClientAndServer
 import org.mockserver.integration.ClientAndServer.startClientAndServer
 import org.mockserver.model.HttpRequest.request
 import org.mockserver.model.HttpResponse.response
+import org.mockserver.verify.VerificationTimes
+import org.springframework.cloud.client.loadbalancer.LoadBalancerClient
 import java.net.URI
 
 @RunWith(SpringRunner::class)
@@ -33,6 +35,9 @@ class APITests {
 
     @MockBean
     lateinit var mockDiscoveryClient: DiscoveryClient
+
+    @MockBean
+    lateinit var mockloadBalancer: LoadBalancerClient
 
     lateinit var contentServer: ClientAndServer
     lateinit var notFoundServer: ClientAndServer
@@ -113,6 +118,29 @@ class APITests {
 
 
         verify(this.mockDiscoveryClient).getInstances("STORAGE")
+    }
+
+    @Test
+    fun successPut() {
+        Mockito.`when`(this.mockloadBalancer.choose("STORAGE"))
+                .thenReturn(SimpleServiceInstance(URI("""http://localhost:$contentServerPort""")))
+
+        this.webClient
+                .put()
+                .uri("/objects/filename")
+                .syncBody("Always Kid")
+                .exchange()
+                .expectStatus()
+                .is2xxSuccessful
+
+        verify(this.mockloadBalancer).choose("STORAGE")
+
+        this.contentServer
+                .verify(
+                        request()
+                                .withMethod("PUT")
+                                .withBody("Always Kid"), VerificationTimes.once()
+                )
     }
 
 }
