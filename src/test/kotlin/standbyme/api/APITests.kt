@@ -22,6 +22,7 @@ import org.mockserver.model.HttpRequest.request
 import org.mockserver.model.HttpResponse.response
 import org.mockserver.verify.VerificationTimes
 import org.springframework.cloud.client.loadbalancer.LoadBalancerClient
+import standbyme.api.repository.MetaDataRepository
 import java.net.URI
 
 @RunWith(SpringRunner::class)
@@ -38,6 +39,9 @@ class APITests {
 
     @MockBean
     lateinit var mockloadBalancer: LoadBalancerClient
+
+    @MockBean
+    lateinit var mockMetaDataRepository: MetaDataRepository
 
     lateinit var contentServer: ClientAndServer
     lateinit var notFoundServer: ClientAndServer

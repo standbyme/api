@@ -10,18 +10,19 @@ import org.springframework.web.reactive.function.client.bodyToMono
 import org.springframework.web.reactive.function.server.ServerResponse
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
+import standbyme.api.repository.MetaDataRepository
 
 @RestController
 @RequestMapping("objects")
-class APIController @Autowired constructor(private val webClientBuilder: WebClient.Builder, private val discoveryClient: DiscoveryClient, private val loadBalancer: LoadBalancerClient) {
+class APIController @Autowired constructor(private val webClientBuilder: WebClient.Builder, private val discoveryClient: DiscoveryClient, private val loadBalancer: LoadBalancerClient, private val metaDataRepository: MetaDataRepository) {
 
     val ok = ServerResponse.ok().build()
 
-    @GetMapping("{filename:.+}", produces = arrayOf("application/octet-stream"))
-    fun get(@PathVariable filename: String): Mono<ByteArray> {
+    @GetMapping("{key:.+}", produces = arrayOf("application/octet-stream"))
+    fun get(@PathVariable key: String): Mono<ByteArray> {
         val webClient = webClientBuilder.build()
         val instances = discoveryClient.getInstances("STORAGE")
-        val urls = instances.map { """${it.uri}/objects/$filename""" }
+        val urls = instances.map { """${it.uri}/objects/$key""" }
         return Flux.fromIterable(urls).flatMap {
             webClient.get().uri(it)
                     .retrieve()
@@ -29,17 +30,17 @@ class APIController @Autowired constructor(private val webClientBuilder: WebClie
                     .onErrorResume { Mono.empty() }
         }.single().onErrorResume {
             when (it) {
-                is NoSuchElementException -> Mono.error(NotFoundException(filename))
+                is NoSuchElementException -> Mono.error(NotFoundException(key))
                 else -> Mono.error(it)
             }
         }
     }
 
-    @PutMapping("{filename:.+}")
-    fun put(@RequestBody data: Mono<String>, @PathVariable filename: String): Mono<ServerResponse> {
+    @PutMapping("{key:.+}")
+    fun put(@RequestBody data: Mono<String>, @PathVariable key: String): Mono<ServerResponse> {
         val webClient = webClientBuilder.build()
         val instance = loadBalancer.choose("STORAGE")
-        val url = """${instance.uri}/objects/$filename"""
+        val url = """${instance.uri}/objects/$key"""
 
         return webClient
                 .put().uri(url)
