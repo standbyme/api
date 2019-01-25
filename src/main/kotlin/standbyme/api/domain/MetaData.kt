@@ -10,9 +10,19 @@ class MetaData {
     @Id
     @NotBlank
     @Column(updatable = false)
-    val key: String? = null
+    val key: String?
 
     @NotBlank
     @Column(updatable = false)
-    val hash: String? = null
+    val hash: String?
+
+    constructor() {
+        this.key = null
+        this.hash = null
+    }
+
+    constructor(key: String, hash: String) {
+        this.key = key
+        this.hash = hash
+    }
 }

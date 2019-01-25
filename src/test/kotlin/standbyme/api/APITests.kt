@@ -22,8 +22,10 @@ import org.mockserver.model.HttpRequest.request
 import org.mockserver.model.HttpResponse.response
 import org.mockserver.verify.VerificationTimes
 import org.springframework.cloud.client.loadbalancer.LoadBalancerClient
+import standbyme.api.domain.MetaData
 import standbyme.api.repository.MetaDataRepository
 import java.net.URI
+import java.util.*
 
 @RunWith(SpringRunner::class)
 @WebFluxTest(APIController::class)
@@ -87,7 +89,6 @@ class APITests {
                 .expectStatus()
                 .isNotFound
 
-        verify(this.mockDiscoveryClient).getInstances("STORAGE")
     }
 
     @Test
@@ -95,6 +96,8 @@ class APITests {
         Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
                 .thenReturn(listOf(contentServerPort, contentServerPort).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
 
+        Mockito.`when`(this.mockMetaDataRepository.findById("filename"))
+                .thenReturn(Optional.of(MetaData("filename", "hash")))
 
         this.webClient
                 .get()
@@ -111,6 +114,9 @@ class APITests {
         Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
                 .thenReturn(listOf(contentServerPort, notFoundServerPort).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
 
+        Mockito.`when`(this.mockMetaDataRepository.findById("filename"))
+                .thenReturn(Optional.of(MetaData("filename", "hash")))
+
         this.webClient
                 .get()
                 .uri("/objects/filename")
@@ -120,8 +126,14 @@ class APITests {
                 .expectHeader()
                 .contentLength(10)
 
-
-        verify(this.mockDiscoveryClient).getInstances("STORAGE")
+        verify(this.mockMetaDataRepository).findById("filename")
+        this.contentServer
+                .verify(
+                        request()
+                                .withMethod("GET")
+                                .withPath("/objects/hash")
+                        , VerificationTimes.once()
+                )
     }
 
     @Test
