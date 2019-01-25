@@ -44,14 +44,14 @@ class APIController @Autowired constructor(private val webClientBuilder: WebClie
     }
 
     @PutMapping("{key:.+}")
-    fun put(@RequestBody data: Mono<String>, @PathVariable key: String): Mono<ServerResponse> {
+    fun put(@RequestBody data: Mono<ByteArray>, @PathVariable key: String): Mono<ServerResponse> {
         val webClient = webClientBuilder.build()
         val instance = loadBalancer.choose("STORAGE")
         val url = """${instance.uri}/objects/$key"""
 
         return webClient
                 .put().uri(url)
-                .body(data, String::class.java)
+                .body(data, ByteArray::class.java)
                 .exchange()
                 .flatMap {
                     val statusCode = it.statusCode()
