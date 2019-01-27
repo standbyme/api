@@ -144,6 +144,13 @@ class APITests {
                 .is5xxServerError
 
         verify(this.mockDiscoveryClient).getInstances("STORAGE")
+        this.contentServer
+                .verify(
+                        request()
+                                .withMethod("GET")
+                                .withPath("/objects/hash256")
+                        , VerificationTimes.exactly(2)
+                )
     }
 
     @Test
@@ -176,7 +183,7 @@ class APITests {
     }
 
     @Test
-    fun successPut() {
+    fun successPutWhenNonExisted() {
         Mockito.`when`(this.mockloadBalancer.choose("STORAGE"))
                 .thenReturn(SimpleServiceInstance(URI("""http://localhost:$contentServerPort""")))
 
@@ -193,8 +200,34 @@ class APITests {
         this.contentServer
                 .verify(
                         request()
+                                .withPath("/objects/8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b")
                                 .withMethod("PUT")
                                 .withBody("Always Kid"), VerificationTimes.once()
+                )
+    }
+
+    @Test
+    fun successPutWhenExisted() {
+        Mockito.`when`(this.mockloadBalancer.choose("STORAGE"))
+                .thenReturn(SimpleServiceInstance(URI("""http://localhost:$contentServerPort""")))
+
+        Mockito.`when`(this.mockFileRepository.existsById("8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b"))
+                .thenReturn(true)
+
+        this.webClient
+                .put()
+                .uri("/objects/filename")
+                .syncBody("Always Kid")
+                .exchange()
+                .expectStatus()
+                .is2xxSuccessful
+
+        verify(this.mockloadBalancer).choose("STORAGE")
+
+        this.contentServer
+                .verify(
+                        request()
+                        , VerificationTimes.exactly(0)
                 )
     }
 

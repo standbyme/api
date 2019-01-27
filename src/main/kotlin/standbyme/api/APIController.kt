@@ -60,7 +60,7 @@ class APIController @Autowired constructor(private val webClientBuilder: WebClie
         return isExistedMono.flatMap { isExisted ->
             when (isExisted) {
                 true -> {
-                    val fileMono = hashMono.map { hash -> fileRepository.findByIdOrNull(hash)!! }
+                    val fileMono = hashMono.map { hash -> File(hash) }
                     val metaDataMono = fileMono.map { file -> MetaData(key, file) }
                     metaDataMono.flatMap { metaData ->
                         metaDataRepository.save(metaData)
