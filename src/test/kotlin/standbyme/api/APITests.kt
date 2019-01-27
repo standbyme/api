@@ -82,7 +82,7 @@ class APITests {
     }
 
     @Test
-    fun notFound() {
+    fun notFoundWhenMissMetaData() {
         Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
                 .thenReturn(listOf(notFoundServerPort).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
 
@@ -93,6 +93,37 @@ class APITests {
                 .exchange()
                 .expectStatus()
                 .isNotFound
+
+        this.notFoundServer
+                .verify(
+                        request()
+                        , VerificationTimes.exactly(0)
+                )
+
+    }
+
+    @Test
+    fun notFoundWhenMissResponse() {
+        Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
+                .thenReturn(listOf(notFoundServerPort).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
+        val file = File("hash256")
+        Mockito.`when`(this.mockMetaDataRepository.findById("filename"))
+                .thenReturn(Optional.of(MetaData("filename", file)))
+
+        this.webClient
+                .get()
+                .uri("/objects/filename")
+                .exchange()
+                .expectStatus()
+                .isNotFound
+
+        this.notFoundServer
+                .verify(
+                        request()
+                                .withMethod("GET")
+                                .withPath("/objects/hash256")
+                        , VerificationTimes.exactly(1)
+                )
 
     }
 
