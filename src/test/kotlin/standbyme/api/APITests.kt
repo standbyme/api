@@ -22,7 +22,9 @@ import org.mockserver.model.HttpRequest.request
 import org.mockserver.model.HttpResponse.response
 import org.mockserver.verify.VerificationTimes
 import org.springframework.cloud.client.loadbalancer.LoadBalancerClient
+import standbyme.api.domain.File
 import standbyme.api.domain.MetaData
+import standbyme.api.repository.FileRepository
 import standbyme.api.repository.MetaDataRepository
 import java.net.URI
 import java.util.*
@@ -44,6 +46,9 @@ class APITests {
 
     @MockBean
     lateinit var mockMetaDataRepository: MetaDataRepository
+
+    @MockBean
+    lateinit var mockFileRepository: FileRepository
 
     lateinit var contentServer: ClientAndServer
     lateinit var notFoundServer: ClientAndServer
@@ -96,8 +101,9 @@ class APITests {
         Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
                 .thenReturn(listOf(contentServerPort, contentServerPort).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
 
+        val file = File("hash256")
         Mockito.`when`(this.mockMetaDataRepository.findById("filename"))
-                .thenReturn(Optional.of(MetaData("filename", "hash")))
+                .thenReturn(Optional.of(MetaData("filename", file)))
 
         this.webClient
                 .get()
@@ -114,8 +120,10 @@ class APITests {
         Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
                 .thenReturn(listOf(contentServerPort, notFoundServerPort).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
 
+        val file = File("hash256")
+
         Mockito.`when`(this.mockMetaDataRepository.findById("filename"))
-                .thenReturn(Optional.of(MetaData("filename", "hash")))
+                .thenReturn(Optional.of(MetaData("filename", file)))
 
         this.webClient
                 .get()
@@ -131,7 +139,7 @@ class APITests {
                 .verify(
                         request()
                                 .withMethod("GET")
-                                .withPath("/objects/hash")
+                                .withPath("/objects/hash256")
                         , VerificationTimes.once()
                 )
     }

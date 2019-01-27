@@ -11,13 +11,20 @@ import org.springframework.web.reactive.function.client.bodyToMono
 import org.springframework.web.reactive.function.server.ServerResponse
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
+import standbyme.api.domain.File
+import standbyme.api.domain.MetaData
+import standbyme.api.repository.FileRepository
 import standbyme.api.repository.MetaDataRepository
+import java.security.MessageDigest
+
+fun ByteArray.toHexString(): String = joinToString("") { String.format("%02x", it) }
 
 @RestController
 @RequestMapping("objects")
-class APIController @Autowired constructor(private val webClientBuilder: WebClient.Builder, private val discoveryClient: DiscoveryClient, private val loadBalancer: LoadBalancerClient, private val metaDataRepository: MetaDataRepository) {
+class APIController @Autowired constructor(private val webClientBuilder: WebClient.Builder, private val discoveryClient: DiscoveryClient, private val loadBalancer: LoadBalancerClient, private val metaDataRepository: MetaDataRepository, private val fileRepository: FileRepository) {
 
     val ok = ServerResponse.ok().build()
+    val messageDigest = MessageDigest.getInstance("SHA-256")
 
     @GetMapping("{key:.+}", produces = arrayOf("application/octet-stream"))
     fun get(@PathVariable key: String): Mono<ByteArray> {
@@ -25,7 +32,7 @@ class APIController @Autowired constructor(private val webClientBuilder: WebClie
         return if (metaData == null) {
             throw NotFoundException(key)
         } else {
-            val hash = metaData.hash!!
+            val hash = metaData.file!!.hash!!
             val webClient = webClientBuilder.build()
             val instances = discoveryClient.getInstances("STORAGE")
             val urls = instances.map { """${it.uri}/objects/$hash""" }
@@ -47,19 +54,42 @@ class APIController @Autowired constructor(private val webClientBuilder: WebClie
     fun put(@RequestBody data: Mono<ByteArray>, @PathVariable key: String): Mono<ServerResponse> {
         val webClient = webClientBuilder.build()
         val instance = loadBalancer.choose("STORAGE")
-        val url = """${instance.uri}/objects/$key"""
+        val hashMono = data.map { messageDigest.digest(it).toHexString() }
+        val isExistedMono = hashMono.map { fileRepository.existsById(it) }
 
-        return webClient
-                .put().uri(url)
-                .body(data, ByteArray::class.java)
-                .exchange()
-                .flatMap {
-                    val statusCode = it.statusCode()
-                    when {
-                        statusCode.is2xxSuccessful -> ok
-                        else -> Mono.error(Exception("kid"))
+        return isExistedMono.flatMap { isExisted ->
+            when (isExisted) {
+                true -> {
+                    val fileMono = hashMono.map { hash -> fileRepository.findByIdOrNull(hash)!! }
+                    val metaDataMono = fileMono.map { file -> MetaData(key, file) }
+                    metaDataMono.flatMap { metaData ->
+                        metaDataRepository.save(metaData)
+                        ok
                     }
                 }
+                false -> {
+                    val urlMono = hashMono.map { """${instance.uri}/objects/$it""" }
+                    val fileMono = hashMono.map { hash -> File(hash) }
+                    val metaDataMono = fileMono.map { file -> MetaData(key, file) }
+                    metaDataMono.flatMap { metaData ->
+                        metaDataRepository.save(metaData)
+                        urlMono.flatMap { url ->
+                            webClient
+                                    .put().uri(url)
+                                    .body(data, ByteArray::class.java)
+                                    .exchange()
+                                    .flatMap {
+                                        val statusCode = it.statusCode()
+                                        when {
+                                            statusCode.is2xxSuccessful -> ok
+                                            else -> Mono.error(Exception("kid"))
+                                        }
+                                    }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

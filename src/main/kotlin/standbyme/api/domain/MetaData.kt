@@ -3,6 +3,7 @@ package standbyme.api.domain
 import javax.persistence.Column
 import javax.persistence.Entity
 import javax.persistence.Id
+import javax.persistence.ManyToOne
 import javax.validation.constraints.NotBlank
 
 @Entity
@@ -14,15 +15,16 @@ class MetaData {
 
     @NotBlank
     @Column(updatable = false)
-    val hash: String?
+    @ManyToOne
+    val file: File?
 
     constructor() {
         this.key = null
-        this.hash = null
+        this.file = null
     }
 
-    constructor(key: String, hash: String) {
+    constructor(key: String, file: File) {
         this.key = key
-        this.hash = hash
+        this.file = file
     }
 }
