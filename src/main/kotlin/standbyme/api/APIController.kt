@@ -19,9 +19,13 @@ import java.security.MessageDigest
 
 import org.springframework.web.reactive.function.client.ClientResponse
 import standbyme.ReedSolomon.Shard
+import standbyme.ReedSolomon.decode
 import standbyme.ReedSolomon.encode
+import standbyme.ReedSolomon.recover
+import java.nio.ByteBuffer
 
 fun ByteArray.toHexString(): String = joinToString("") { String.format("%02x", it) }
+fun Int.toByteArray(): ByteArray = ByteArray(1) { ByteBuffer.allocate(4).putInt(this).array()[3] }
 
 @RestController
 @RequestMapping("objects")
@@ -31,11 +35,11 @@ class APIController @Autowired constructor(private val webClientBuilder: WebClie
     val messageDigest = MessageDigest.getInstance("SHA-256")
 
     fun parseStorageResponse(byteArray: ByteArray, shardSize: Int): Map<Int, ByteArray> {
-        val indexAndShardSize = 4 + shardSize
+        val indexAndShardSize = 1 + shardSize
         val byteList = byteArray.toList()
         return byteList.chunked(indexAndShardSize) {
             val index = it.component1().toInt()
-            val shard = it.drop(4).toByteArray()
+            val shard = it.drop(1).toByteArray()
             Pair(index, shard)
         }.toMap()
     }
@@ -47,41 +51,58 @@ class APIController @Autowired constructor(private val webClientBuilder: WebClie
             throw NotFoundException(key)
         } else {
             val hash = metaData.file!!.hash!!
+            val file = metaData.file
+            val shardSize = file.shardSize!!
+            val fileSize = file.fileSize!!
+
             val webClient = webClientBuilder.build()
+
             val instances = discoveryClient.getInstances("STORAGE")
             val urls = instances.map { """${it.uri}/objects/$hash""" }
             Flux.fromIterable(urls).flatMap {
                 webClient.get().uri(it)
                         .retrieve()
                         .bodyToMono<ByteArray>()
+                        .map { parseStorageResponse(it, shardSize) }
                         .onErrorResume { Mono.empty() }
-            }.single().onErrorResume {
-                when (it) {
-                    is NoSuchElementException -> Mono.error(NotFoundException(key))
-                    else -> Mono.error(it)
+            }.reduceWith({ arrayOfNulls<ByteArray>(6) }) { x, y ->
+                y.forEach {
+                    val index = it.key
+                    val shard = it.value
+                    x[index] = shard
                 }
+                x
+            }.map {
+                val recoverResult = recover(it, shardSize)
+                val patch = recoverResult.patch
+                patch.forEach { index, shard ->
+                    putShard(index, shard, hash).subscribe()
+                }
+                val shards = recoverResult.shards
+                decode(shards, fileSize)
             }
         }
     }
 
+    fun computeHash(byteArray: ByteArray): String = messageDigest.digest(byteArray).toHexString()
+
+    fun putShard(index: Int, shard: Shard, hash: String): Mono<ClientResponse> {
+        val webClient = webClientBuilder.build()
+
+        val instance = loadBalancer.choose("STORAGE")
+        val url = """${instance.uri}/objects/$hash.$index"""
+
+        return webClient
+                .put().uri(url)
+                .syncBody(index.toByteArray() + shard)
+                .exchange()
+    }
+
     @PutMapping("{key:.+}")
     fun put(@RequestBody data: Mono<ByteArray>, @PathVariable key: String): Mono<ServerResponse> {
-        val webClient = webClientBuilder.build()
-        val hashMono = data.map { messageDigest.digest(it).toHexString() }
+        val hashMono = data.map { computeHash(it) }
         val isExistedMono = hashMono.map { fileRepository.existsById(it) }
 
-        fun putShard(index: Int, shard: Shard): Mono<ClientResponse> {
-
-            val instance = loadBalancer.choose("STORAGE")
-            val urlMono = hashMono.map { """${instance.uri}/objects/$it.$index""" }
-
-            return urlMono.flatMap { url ->
-                webClient
-                        .put().uri(url)
-                        .syncBody(shard)
-                        .exchange()
-            }
-        }
 
         return isExistedMono.flatMap { isExisted ->
             when (isExisted) {
@@ -109,7 +130,7 @@ class APIController @Autowired constructor(private val webClientBuilder: WebClie
                                 shardFlux.index().flatMap {
                                     val index = it.t1
                                     val shard = it.t2
-                                    putShard(index.toInt(), shard)
+                                    putShard(index.toInt(), shard, hash)
                                 }.subscribe()
                                 ok
                             }

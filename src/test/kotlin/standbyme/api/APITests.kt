@@ -105,7 +105,7 @@ class APITests {
     }
 
     @Test
-    fun notFoundWhenMissResponse() {
+    fun serverErrorWhenMissResponseAndFailRecovering() {
         Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
                 .thenReturn(listOf(notFoundServerPort).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
         val file = File("hash256", 2, 2)
@@ -117,7 +117,7 @@ class APITests {
                 .uri("/objects/filename")
                 .exchange()
                 .expectStatus()
-                .isNotFound
+                .is5xxServerError
 
         this.notFoundServer
                 .verify(
@@ -126,7 +126,6 @@ class APITests {
                                 .withPath("/objects/hash256")
                         , VerificationTimes.exactly(1)
                 )
-
     }
 
     @Test
@@ -157,10 +156,50 @@ class APITests {
 
     @Test
     fun successGet() {
-        Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
-                .thenReturn(listOf(contentServerPort, notFoundServerPort).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
+        this.contentServer.reset()
 
-        val file = File("hash256", 2, 2)
+        Mockito.`when`(this.mockloadBalancer.choose("STORAGE"))
+                .thenReturn(SimpleServiceInstance(URI("""http://localhost:$contentServerPort""")))
+
+        val contentServer2 = startClientAndServer()
+        val contentServer2Port = contentServer2.localPort!!
+
+        val byteListList = arrayOf(
+                arrayOf(65.toByte(), 108.toByte(), 119.toByte()),
+                arrayOf(97.toByte(), 121.toByte(), 115.toByte()),
+                arrayOf(32.toByte(), 75.toByte(), 105.toByte()),
+                arrayOf(100.toByte(), 0.toByte(), 0.toByte()),
+                arrayOf((-124).toByte(), (-6).toByte(), 36.toByte()),
+                arrayOf((-31).toByte(), 54.toByte(), 83.toByte())
+        )
+
+        val byteArrayList = byteListList.map { it.toByteArray() }
+
+        val a = 3.toByteArray() + byteArrayList[3] + 1.toByteArray() + byteArrayList[1] + 4.toByteArray() + byteArrayList[4]
+        val b = 5.toByteArray() + byteArrayList[5]
+
+        this.contentServer
+                .`when`(
+                        request()
+                )
+                .respond(
+                        response()
+                                .withBody(a)
+                )
+
+        contentServer2
+                .`when`(
+                        request()
+                )
+                .respond(
+                        response()
+                                .withBody(b)
+                )
+
+        Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
+                .thenReturn(listOf(contentServerPort, contentServer2Port, notFoundServerPort).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
+
+        val file = File("8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b", 3, 10)
 
         Mockito.`when`(this.mockMetaDataRepository.findById("filename"))
                 .thenReturn(Optional.of(MetaData("filename", file)))
@@ -174,13 +213,33 @@ class APITests {
                 .expectHeader()
                 .contentLength(10)
 
+        contentServer2
+                .verify(
+                        request()
+                                .withMethod("GET")
+                                .withPath("/objects/8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b")
+                        , VerificationTimes.once()
+                )
+
+        contentServer2.stop()
+
         verify(this.mockMetaDataRepository).findById("filename")
         this.contentServer
                 .verify(
                         request()
                                 .withMethod("GET")
-                                .withPath("/objects/hash256")
+                                .withPath("/objects/8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b")
                         , VerificationTimes.once()
+                ).verify(
+                        request()
+                                .withPath("/objects/8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b.0")
+                                .withMethod("PUT")
+                                .withBody(0.toByteArray() + byteArrayList[0]), VerificationTimes.exactly(1)
+                ).verify(
+                        request()
+                                .withPath("/objects/8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b.2")
+                                .withMethod("PUT")
+                                .withBody(2.toByteArray() + byteArrayList[2]), VerificationTimes.exactly(1)
                 )
     }
 
@@ -188,6 +247,10 @@ class APITests {
     fun successPutWhenNonExisted() {
         Mockito.`when`(this.mockloadBalancer.choose("STORAGE"))
                 .thenReturn(SimpleServiceInstance(URI("""http://localhost:$contentServerPort""")))
+
+        Mockito.`when`(this.mockFileRepository.findById("8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b"))
+                .thenReturn(Optional.empty())
+
 
         val metaDataArgument = ArgumentCaptor.forClass(MetaData::class.java)
 
@@ -218,7 +281,7 @@ class APITests {
                             request()
                                     .withPath("/objects/8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b.$it")
                                     .withMethod("PUT")
-                                    .withBody(shards[it]), VerificationTimes.exactly(1)
+                                    .withBody(it.toByteArray() + shards[it]), VerificationTimes.exactly(1)
                     )
         }
     }
