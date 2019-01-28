@@ -4,6 +4,7 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.ArgumentCaptor
 
 import org.mockito.Mockito
 import org.mockito.Mockito.*
@@ -188,6 +189,8 @@ class APITests {
         Mockito.`when`(this.mockloadBalancer.choose("STORAGE"))
                 .thenReturn(SimpleServiceInstance(URI("""http://localhost:$contentServerPort""")))
 
+        val metaDataArgument = ArgumentCaptor.forClass(MetaData::class.java)
+
         this.webClient
                 .put()
                 .uri("/objects/filename")
@@ -196,7 +199,16 @@ class APITests {
                 .expectStatus()
                 .is2xxSuccessful
 
+        verify(mockMetaDataRepository).save(metaDataArgument.capture())
+
         verify(this.mockloadBalancer, times(6)).choose("STORAGE")
+
+        val metaData = metaDataArgument.value
+        assert(metaData.key == "filename")
+        val file = metaData.file!!
+        assert(file.hash == "8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b")
+        assert(file.shardSize == 3)
+        assert(file.fileSize == 10)
 
         val shards = encode("Always Kid".toByteArray()).shards
 
@@ -222,6 +234,8 @@ class APITests {
         Mockito.`when`(this.mockFileRepository.findById("8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b"))
                 .thenReturn(Optional.of(File("8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b", 2, 2)))
 
+        val metaDataArgument = ArgumentCaptor.forClass(MetaData::class.java)
+
         this.webClient
                 .put()
                 .uri("/objects/filename")
@@ -229,6 +243,15 @@ class APITests {
                 .exchange()
                 .expectStatus()
                 .is2xxSuccessful
+
+        verify(mockMetaDataRepository).save(metaDataArgument.capture())
+
+        val metaData = metaDataArgument.value
+        assert(metaData.key == "filename")
+        val file = metaData.file!!
+        assert(file.hash == "8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b")
+        assert(file.shardSize == 2)
+        assert(file.fileSize == 2)
 
         this.contentServer
                 .verify(
