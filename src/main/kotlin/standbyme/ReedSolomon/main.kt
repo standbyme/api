@@ -1,13 +1,8 @@
 package standbyme.ReedSolomon
 
 import com.backblaze.erasure.ReedSolomon
-import java.util.*
 
 typealias Shard = ByteArray
-
-fun ByteArray?.println() {
-    println(Arrays.toString(this))
-}
 
 const val DATA_SHARDS = 4
 const val PARITY_SHARDS = 2
@@ -48,29 +43,9 @@ fun recover(shards: Array<Shard?>, shardSize: Int): RecoverResult {
     val patch = mutableMapOf<Int, Shard>()
     missShardIndexSet.forEach { patch[it] = shards[it]!! }
 
-    return RecoverResult(shards, patch)
+    return RecoverResult(shards.map { it!! }.toTypedArray(), patch)
 }
 
-fun main(args: Array<String>) {
-    val a = encode("ssadasd".toByteArray()).shards
-    val haha = Array<Shard?>(6) {
-        a[it]
-    }
-    haha.forEach { it!!.println() }
-    println("------")
-    haha[0] = null
-    haha[2] = null
-
-    haha.forEach { it.println() }
-
-    val recoverResult = recover(haha, 2)
-    val patch = recoverResult.patch
-    val shards = recoverResult.shards
-    println("------Patch")
-    patch.forEach {
-        println(it.key)
-        it.value.println()
-    }
-    println("------")
-    shards.forEach { it!!.println() }
+fun decode(shards: Array<Shard>, fileSize: Int): ByteArray {
+    return shards.sliceArray(0..3).flatMap { it.toList() }.take(fileSize).toByteArray()
 }
