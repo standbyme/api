@@ -11,12 +11,18 @@ class File {
     @NotBlank
     @Column(updatable = false)
     val hash: String?
+    val shardSize: Int?
+    val fileSize: Int?
 
     constructor() {
         this.hash = null
+        this.shardSize = null
+        this.fileSize = null
     }
 
-    constructor(hash: String) {
+    constructor(hash: String, shardSize: Int, fileSize: Int) {
         this.hash = hash
+        this.shardSize = shardSize
+        this.fileSize = fileSize
     }
 }

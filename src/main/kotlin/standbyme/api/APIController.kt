@@ -17,6 +17,10 @@ import standbyme.api.repository.FileRepository
 import standbyme.api.repository.MetaDataRepository
 import java.security.MessageDigest
 
+import org.springframework.web.reactive.function.client.ClientResponse
+import standbyme.ReedSolomon.Shard
+import standbyme.ReedSolomon.encode
+
 fun ByteArray.toHexString(): String = joinToString("") { String.format("%02x", it) }
 
 @RestController
@@ -53,38 +57,52 @@ class APIController @Autowired constructor(private val webClientBuilder: WebClie
     @PutMapping("{key:.+}")
     fun put(@RequestBody data: Mono<ByteArray>, @PathVariable key: String): Mono<ServerResponse> {
         val webClient = webClientBuilder.build()
-        val instance = loadBalancer.choose("STORAGE")
         val hashMono = data.map { messageDigest.digest(it).toHexString() }
         val isExistedMono = hashMono.map { fileRepository.existsById(it) }
+
+        fun putShard(index: Int, shard: Shard): Mono<ClientResponse> {
+
+            val instance = loadBalancer.choose("STORAGE")
+            val urlMono = hashMono.map { """${instance.uri}/objects/$it.$index""" }
+
+            return urlMono.flatMap { url ->
+                webClient
+                        .put().uri(url)
+                        .syncBody(shard)
+                        .exchange()
+            }
+        }
 
         return isExistedMono.flatMap { isExisted ->
             when (isExisted) {
                 true -> {
-                    val fileMono = hashMono.map { hash -> File(hash) }
-                    val metaDataMono = fileMono.map { file -> MetaData(key, file) }
-                    metaDataMono.flatMap { metaData ->
+                    hashMono.flatMap {
+                        val file = fileRepository.findByIdOrNull(it)!!
+                        val metaData = MetaData(key, file)
                         metaDataRepository.save(metaData)
                         ok
                     }
                 }
                 false -> {
-                    val urlMono = hashMono.map { """${instance.uri}/objects/$it""" }
-                    val fileMono = hashMono.map { hash -> File(hash) }
-                    val metaDataMono = fileMono.map { file -> MetaData(key, file) }
-                    metaDataMono.flatMap { metaData ->
-                        metaDataRepository.save(metaData)
-                        urlMono.flatMap { url ->
-                            webClient
-                                    .put().uri(url)
-                                    .body(data, ByteArray::class.java)
-                                    .exchange()
-                                    .flatMap {
-                                        val statusCode = it.statusCode()
-                                        when {
-                                            statusCode.is2xxSuccessful -> ok
-                                            else -> Mono.error(Exception("kid"))
-                                        }
-                                    }
+                    val encodeResultMono = data.map { encode(it) }
+                    val shardSizeMono = encodeResultMono.map { it.shardSize }
+                    val shardsMono = encodeResultMono.map { it.shards }
+                    val fileSizeMono = data.map { it.size }
+
+                    fileSizeMono.flatMap { fileSize ->
+                        shardSizeMono.flatMap { shardSize ->
+                            hashMono.flatMap { hash ->
+                                val file = File(hash, shardSize, fileSize)
+                                val metaData = MetaData(key, file)
+                                metaDataRepository.save(metaData)
+                                val shardFlux = shardsMono.flatMapMany { Flux.fromIterable(it.toList()) }
+                                shardFlux.index().flatMap {
+                                    val index = it.t1
+                                    val shard = it.t2
+                                    putShard(index.toInt(), shard)
+                                }.subscribe()
+                                ok
+                            }
                         }
                     }
                 }

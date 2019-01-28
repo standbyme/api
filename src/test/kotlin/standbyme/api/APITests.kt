@@ -22,6 +22,7 @@ import org.mockserver.model.HttpRequest.request
 import org.mockserver.model.HttpResponse.response
 import org.mockserver.verify.VerificationTimes
 import org.springframework.cloud.client.loadbalancer.LoadBalancerClient
+import standbyme.ReedSolomon.encode
 import standbyme.api.domain.File
 import standbyme.api.domain.MetaData
 import standbyme.api.repository.FileRepository
@@ -106,7 +107,7 @@ class APITests {
     fun notFoundWhenMissResponse() {
         Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
                 .thenReturn(listOf(notFoundServerPort).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
-        val file = File("hash256")
+        val file = File("hash256", 2, 2)
         Mockito.`when`(this.mockMetaDataRepository.findById("filename"))
                 .thenReturn(Optional.of(MetaData("filename", file)))
 
@@ -132,7 +133,7 @@ class APITests {
         Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
                 .thenReturn(listOf(contentServerPort, contentServerPort).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
 
-        val file = File("hash256")
+        val file = File("hash256", 2, 2)
         Mockito.`when`(this.mockMetaDataRepository.findById("filename"))
                 .thenReturn(Optional.of(MetaData("filename", file)))
 
@@ -158,7 +159,7 @@ class APITests {
         Mockito.`when`(this.mockDiscoveryClient.getInstances("STORAGE"))
                 .thenReturn(listOf(contentServerPort, notFoundServerPort).map { SimpleServiceInstance(URI("""http://localhost:$it""")) })
 
-        val file = File("hash256")
+        val file = File("hash256", 2, 2)
 
         Mockito.`when`(this.mockMetaDataRepository.findById("filename"))
                 .thenReturn(Optional.of(MetaData("filename", file)))
@@ -195,15 +196,19 @@ class APITests {
                 .expectStatus()
                 .is2xxSuccessful
 
-        verify(this.mockloadBalancer).choose("STORAGE")
+        verify(this.mockloadBalancer, times(6)).choose("STORAGE")
 
-        this.contentServer
-                .verify(
-                        request()
-                                .withPath("/objects/8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b")
-                                .withMethod("PUT")
-                                .withBody("Always Kid"), VerificationTimes.once()
-                )
+        val shards = encode("Always Kid".toByteArray()).shards
+
+        (0..5).forEach {
+            this.contentServer
+                    .verify(
+                            request()
+                                    .withPath("/objects/8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b.$it")
+                                    .withMethod("PUT")
+                                    .withBody(shards[it]), VerificationTimes.exactly(1)
+                    )
+        }
     }
 
     @Test
@@ -214,6 +219,9 @@ class APITests {
         Mockito.`when`(this.mockFileRepository.existsById("8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b"))
                 .thenReturn(true)
 
+        Mockito.`when`(this.mockFileRepository.findById("8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b"))
+                .thenReturn(Optional.of(File("8dc8a7600512edca429c9cbba2a103ac7476cfe6dd55bf3f3ea5734711b56d9b", 2, 2)))
+
         this.webClient
                 .put()
                 .uri("/objects/filename")
@@ -221,8 +229,6 @@ class APITests {
                 .exchange()
                 .expectStatus()
                 .is2xxSuccessful
-
-        verify(this.mockloadBalancer).choose("STORAGE")
 
         this.contentServer
                 .verify(
