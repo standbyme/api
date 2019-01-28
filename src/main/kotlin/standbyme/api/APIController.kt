@@ -30,6 +30,16 @@ class APIController @Autowired constructor(private val webClientBuilder: WebClie
     val ok = ServerResponse.ok().build()
     val messageDigest = MessageDigest.getInstance("SHA-256")
 
+    fun parseStorageResponse(byteArray: ByteArray, shardSize: Int): Map<Int, ByteArray> {
+        val indexAndShardSize = 4 + shardSize
+        val byteList = byteArray.toList()
+        return byteList.chunked(indexAndShardSize) {
+            val index = it.component1().toInt()
+            val shard = it.drop(4).toByteArray()
+            Pair(index, shard)
+        }.toMap()
+    }
+
     @GetMapping("{key:.+}", produces = arrayOf("application/octet-stream"))
     fun get(@PathVariable key: String): Mono<ByteArray> {
         val metaData = metaDataRepository.findByIdOrNull(key)
