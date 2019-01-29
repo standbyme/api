@@ -1,9 +1,6 @@
 package standbyme.api.domain
 
-import javax.persistence.Column
-import javax.persistence.Entity
-import javax.persistence.Id
-import javax.persistence.ManyToOne
+import javax.persistence.*
 import javax.validation.constraints.NotBlank
 
 @Entity
@@ -14,7 +11,7 @@ class MetaData {
     val key: String?
 
     @NotBlank
-    @Column(updatable = false)
+    @JoinColumn(updatable = false)
     @ManyToOne
     val file: File?
 
