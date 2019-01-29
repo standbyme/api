@@ -99,43 +99,38 @@ class APIController @Autowired constructor(private val webClientBuilder: WebClie
     }
 
     @PutMapping("{key:.+}")
-    fun put(@RequestBody data: Mono<ByteArray>, @PathVariable key: String): Mono<ServerResponse> {
-        val hashMono = data.map { computeHash(it) }
-        val isExistedMono = hashMono.map { fileRepository.existsById(it) }
-
-
-        return isExistedMono.flatMap { isExisted ->
+    fun put(@RequestBody dataMono: Mono<ByteArray>, @PathVariable key: String): Mono<ServerResponse> {
+        return dataMono.flatMap { data ->
+            val hash = computeHash(data)
+            val isExisted = fileRepository.existsById(hash)
             when (isExisted) {
                 true -> {
-                    hashMono.flatMap {
-                        val file = fileRepository.findByIdOrNull(it)!!
-                        val metaData = MetaData(key, file)
-                        metaDataRepository.save(metaData)
-                        ok
-                    }
+                    val file = fileRepository.findByIdOrNull(hash)!!
+                    val metaData = MetaData(key, file)
+                    metaDataRepository.save(metaData)
+                    ok
                 }
                 false -> {
-                    val encodeResultMono = data.map { encode(it) }
-                    val shardSizeMono = encodeResultMono.map { it.shardSize }
-                    val shardsMono = encodeResultMono.map { it.shards }
-                    val fileSizeMono = data.map { it.size }
 
-                    fileSizeMono.flatMap { fileSize ->
-                        shardSizeMono.flatMap { shardSize ->
-                            hashMono.flatMap { hash ->
-                                val file = File(hash, shardSize, fileSize)
-                                val metaData = MetaData(key, file)
-                                metaDataRepository.save(metaData)
-                                val shardFlux = shardsMono.flatMapMany { Flux.fromIterable(it.toList()) }
-                                shardFlux.index().flatMap {
-                                    val index = it.t1
-                                    val shard = it.t2
-                                    putShard(index.toInt(), shard, hash)
-                                }.subscribe()
-                                ok
-                            }
-                        }
+                    val encodeResult = encode(data)
+                    val shardSize = encodeResult.shardSize
+                    val shards = encodeResult.shards
+                    shards.forEach {
+                        assert(shardSize == it.size)
                     }
+                    val fileSize = data.size
+
+                    val file = File(hash, shardSize, fileSize)
+                    val metaData = MetaData(key, file)
+                    fileRepository.save(file)
+                    metaDataRepository.save(metaData)
+                    val shardFlux = Flux.fromArray(shards)
+                    shardFlux.index().flatMap {
+                        val index = it.t1
+                        val shard = it.t2
+                        putShard(index.toInt(), shard, hash)
+                    }.subscribe()
+                    ok
                 }
             }
         }
